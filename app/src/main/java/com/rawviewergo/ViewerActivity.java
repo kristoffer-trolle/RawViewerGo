@@ -1,0 +1,84 @@
+package com.rawviewergo;
+
+import android.graphics.Bitmap;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.widget.ImageView;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.documentfile.provider.DocumentFile;
+
+import com.anthonymandra.dcraw.LibRaw;
+
+import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class ViewerActivity extends AppCompatActivity {
+
+    static final String EXTRA_URI = "extra_uri";
+    static final String EXTRA_NAME = "extra_name";
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private ImageView imageView;
+    private ProgressBar progressBar;
+    private TextView errorText;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_viewer);
+
+        imageView = findViewById(R.id.imageViewer);
+        progressBar = findViewById(R.id.progressViewer);
+        errorText = findViewById(R.id.textViewerError);
+
+        findViewById(R.id.buttonBack).setOnClickListener(v -> finish());
+
+        Uri uri = getIntent().getParcelableExtra(EXTRA_URI);
+        if (uri == null) {
+            finish();
+            return;
+        }
+        setTitle(getIntent().getStringExtra(EXTRA_NAME));
+        loadImage(uri);
+    }
+
+    private void loadImage(Uri uri) {
+        progressBar.setVisibility(View.VISIBLE);
+        errorText.setVisibility(View.GONE);
+
+        executor.execute(() -> {
+            Bitmap bitmap = null;
+            try {
+                DocumentFile document = DocumentFile.fromSingleUri(this, uri);
+                File staged = RawFileUtils.stageForDecode(this, document);
+                bitmap = LibRaw.decodePreview(staged);
+            } catch (Exception ignored) {
+                // handled below via null bitmap
+            }
+            Bitmap finalBitmap = bitmap;
+            mainHandler.post(() -> {
+                progressBar.setVisibility(View.GONE);
+                if (finalBitmap != null) {
+                    imageView.setImageBitmap(finalBitmap);
+                } else {
+                    errorText.setVisibility(View.VISIBLE);
+                }
+            });
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        executor.shutdownNow();
+    }
+}
