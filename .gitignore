@@ -36,3 +36,6 @@ captures/
 # Gradle wrapper jar must be committed for ./gradlew to work
 !gradle/wrapper/gradle-wrapper.jar
 
+# Convenience copy of the built APK for sideloading onto a phone - regenerate via gradlew
+/RawViewerGo.apk
+

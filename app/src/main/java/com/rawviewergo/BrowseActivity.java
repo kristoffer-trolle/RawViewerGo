@@ -56,6 +56,7 @@ public class BrowseActivity extends AppCompatActivity {
         buttonAutoEnhance = findViewById(R.id.buttonAutoEnhance);
         recyclerView.setLayoutManager(new GridLayoutManager(this, GRID_SPAN_COUNT));
 
+        InsetUtils.applyTopBarInset(findViewById(R.id.topBar));
         findViewById(R.id.buttonSelectFolder).setOnClickListener(v -> launchFolderPicker());
         buttonAutoEnhance.setOnClickListener(v -> toggleAutoEnhance());
         updateAutoEnhanceButtonText();

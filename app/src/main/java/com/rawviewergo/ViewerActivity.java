@@ -46,6 +46,8 @@ public class ViewerActivity extends AppCompatActivity {
         errorText = findViewById(R.id.textViewerError);
         buttonAutoEnhance = findViewById(R.id.buttonAutoEnhance);
 
+        InsetUtils.applyTopBarInset(findViewById(R.id.topBar));
+
         findViewById(R.id.buttonBack).setOnClickListener(v -> finish());
         buttonAutoEnhance.setOnClickListener(v -> toggleAutoEnhance());
         updateAutoEnhanceButtonText();
