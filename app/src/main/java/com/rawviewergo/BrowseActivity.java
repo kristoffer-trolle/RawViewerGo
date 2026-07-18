@@ -54,8 +54,6 @@ public class BrowseActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new GridLayoutManager(this, GRID_SPAN_COUNT));
 
         findViewById(R.id.buttonSelectFolder).setOnClickListener(v -> launchFolderPicker());
-        findViewById(R.id.buttonSettings).setOnClickListener(v ->
-                startActivity(new Intent(this, SettingsActivity.class)));
 
         restorePersistedFolderOrShowEmptyState();
     }

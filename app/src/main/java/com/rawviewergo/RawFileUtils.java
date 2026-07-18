@@ -68,8 +68,11 @@ final class RawFileUtils {
     /**
      * Builds an ACTION_OPEN_DOCUMENT_TREE intent seeded at the best-guess default location:
      * the first removable storage volume (USB card reader) if one is mounted, else the
-     * Downloads folder on primary storage. This still requires one user tap to confirm access
+     * DCIM folder on primary storage. This still requires one user tap to confirm access
      * (Android does not allow silently granting folder access) but avoids manual navigation.
+     * Note: Android's system folder picker refuses to grant the top-level "Download" folder
+     * ("Can't use this folder... To protect your privacy, choose another folder") - DCIM does
+     * not have that restriction and is a more sensible default for photo files anyway.
      */
     static Intent createDefaultFolderIntent(Context context) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -89,11 +92,11 @@ final class RawFileUtils {
             }
         }
 
-        // No USB volume mounted - fall back to the Downloads folder on primary storage.
-        Uri downloadsUri = DocumentsContract.buildDocumentUri(
-                "com.android.externalstorage.documents", "primary:" + Environment.DIRECTORY_DOWNLOADS);
-        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, downloadsUri);
-        Log.i(TAG, "No removable volume found, seeding folder picker at Downloads");
+        // No USB volume mounted - fall back to the DCIM folder on primary storage.
+        Uri dcimUri = DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", "primary:" + Environment.DIRECTORY_DCIM);
+        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, dcimUri);
+        Log.i(TAG, "No removable volume found, seeding folder picker at DCIM");
         return intent;
     }
 
