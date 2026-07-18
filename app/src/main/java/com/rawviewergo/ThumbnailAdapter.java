@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.util.LruCache;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -93,19 +94,29 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
         holder.itemView.setOnClickListener(v -> listener.onItemClick(document));
     }
 
+    private static final String TAG = "ThumbnailAdapter";
+
     private Bitmap decode(DocumentFile document) {
+        // Reads directly off the SAF Uri via a seekable file descriptor - no local copy of
+        // the raw file needed, since LibRaw only pulls the byte ranges it actually needs.
+        Bitmap bitmap = NativeRaw.decodeThumbnail(context, document.getUri());
+        if (bitmap != null) {
+            return bitmap;
+        }
+
+        // Fallback: the reused prebuilt binary needs a real file path, so stage a local copy.
         try {
             File staged = RawFileUtils.stageForDecode(context, document);
-            Bitmap bmp = LibRaw.decodePreview(staged);
-            if (bmp == null) {
-                android.util.Log.w("ThumbnailAdapter", "decodePreview returned null for " + document.getName());
+            bitmap = LibRaw.decodePreview(staged);
+            if (bitmap == null) {
+                Log.w(TAG, "decodePreview returned null for " + document.getName());
             } else {
-                android.util.Log.i("ThumbnailAdapter", "decodePreview " + document.getName()
-                        + " -> " + bmp.getWidth() + "x" + bmp.getHeight());
+                Log.i(TAG, "decodePreview " + document.getName()
+                        + " -> " + bitmap.getWidth() + "x" + bitmap.getHeight());
             }
-            return bmp;
+            return bitmap;
         } catch (Exception e) {
-            android.util.Log.e("ThumbnailAdapter", "decode failed for " + document.getName(), e);
+            Log.e(TAG, "decode failed for " + document.getName(), e);
             return null;
         }
     }
