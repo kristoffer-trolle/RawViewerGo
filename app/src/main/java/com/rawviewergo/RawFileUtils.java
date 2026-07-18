@@ -47,6 +47,10 @@ final class RawFileUtils {
         return false;
     }
 
+    static boolean isMef(String name) {
+        return name != null && name.toLowerCase(Locale.ROOT).endsWith(".mef");
+    }
+
     static List<DocumentFile> listRawFiles(DocumentFile folder) {
         List<DocumentFile> result = new ArrayList<>();
         if (folder == null || !folder.isDirectory()) {

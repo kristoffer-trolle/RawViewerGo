@@ -2,10 +2,6 @@ package com.rawviewergo;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.ColorMatrix;
-import android.graphics.ColorMatrixColorFilter;
-import android.graphics.Paint;
 
 /**
  * Post-processes an already-decoded raw preview/image: these medium-format backs' raw
@@ -13,20 +9,38 @@ import android.graphics.Paint;
  * gives an opt-in "make it look nicer" pass rather than changing the base decode itself
  * (which would mean re-running the expensive native demosaic on every toggle).
  *
- * Pipeline: auto-levels brightness/contrast stretch (from the image's own histogram) ->
- * +20% saturation -> unsharp-mask-style sharpen. Order matters: tone and color first, then
- * sharpen last so we're not amplifying artifacts from the earlier steps.
+ * Pipeline: DCR-only color balance (toward red/yellow) -> auto-levels brightness/contrast
+ * stretch (from the image's own histogram, plus an extra flat brightness boost) -> saturation
+ * boost -> contrast reduction (pivoted around mid-gray) -> unsharp-mask-style sharpen. Mamiya
+ * ZD (.mef) files get a bigger brightness/saturation boost than Kodak files (they come out
+ * noticeably darker otherwise) plus a bigger contrast pull-back (they tend to look too
+ * contrasty). Kodak Pro Back (.dcr) files get their own, smaller brightness boost and
+ * contrast pull-back, an extra color balance shift toward red/yellow (they render slightly
+ * cool/green otherwise), and slightly less saturation than the general amount.
+ *
+ * The core math (computeLevels/applyToPixels/sharpen) works on plain int[] ARGB pixel
+ * arrays with no android.graphics dependency, so it's directly unit-testable on the JVM
+ * without Robolectric or an emulator - see app/src/test/java/.../AutoEnhanceTest.java.
  */
 final class AutoEnhance {
 
     private static final String PREFS = "rawviewergo";
     private static final String KEY_ENABLED = "auto_enhance_enabled";
 
-    private static final float SATURATION_BOOST = 1.2f; // +20%
-    private static final float SHARPEN_AMOUNT = 0.5f;
-    private static final float LEVELS_LOW_PERCENTILE = 0.01f;
-    private static final float LEVELS_HIGH_PERCENTILE = 0.99f;
-    private static final float MAX_LEVELS_SCALE = 3.0f;
+    static final float BRIGHTNESS_BOOST = 1.2f; // +20% general
+    static final float BRIGHTNESS_BOOST_MEF_EXTRA = 1.2f; // additional +20% for MEF, stacked
+    static final float SATURATION_BOOST = 1.35f; // +35% general
+    static final float SATURATION_BOOST_MEF_EXTRA = 1.2f; // additional +20% for MEF, stacked
+    static final float SHARPEN_AMOUNT = 0.9f * 1.1f * 1.1f; // +10% general, twice now
+    static final float LEVELS_LOW_PERCENTILE = 0.01f;
+    static final float LEVELS_HIGH_PERCENTILE = 0.99f;
+    static final float MAX_LEVELS_SCALE = 3.0f;
+    static final float DCR_RED_SHIFT = 0.20f; // toward red on the green<->red axis
+    static final float DCR_YELLOW_SHIFT = 0.25f; // toward yellow on the blue<->yellow axis
+    static final float DCR_SATURATION_DELTA = -0.05f; // -5 points off the general saturation boost
+    static final float DCR_BRIGHTNESS_EXTRA = 1.05f * 1.05f; // additional +5% for DCR, stacked twice
+    static final float DCR_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
+    static final float MEF_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
 
     static boolean isEnabled(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -38,38 +52,67 @@ final class AutoEnhance {
                 .edit().putBoolean(KEY_ENABLED, enabled).apply();
     }
 
-    static Bitmap apply(Bitmap source) {
-        Bitmap toned = applyLevelsAndSaturation(source);
-        return sharpen(toned, SHARPEN_AMOUNT);
+    static Bitmap apply(Bitmap source, boolean isMef) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int[] pixels = new int[width * height];
+        source.getPixels(pixels, 0, width, 0, 0, width, height);
+        int[] result = applyToPixels(pixels, width, height, isMef);
+        return Bitmap.createBitmap(result, width, height, Bitmap.Config.ARGB_8888);
     }
 
-    private static Bitmap applyLevelsAndSaturation(Bitmap source) {
-        float[] blackWhite = computeLevels(source);
+    /** Pure pixel-array pipeline: color balance -> levels/saturation -> contrast -> sharpen. */
+    static int[] applyToPixels(int[] pixels, int width, int height, boolean isMef) {
+        int[] toned = applyLevelsSaturationAndColorBalance(pixels, width, height, isMef);
+        return sharpen(toned, width, height, SHARPEN_AMOUNT);
+    }
+
+    private static int[] applyLevelsSaturationAndColorBalance(int[] pixels, int width, int height, boolean isMef) {
+        float brightnessBoost = BRIGHTNESS_BOOST * (isMef ? BRIGHTNESS_BOOST_MEF_EXTRA : DCR_BRIGHTNESS_EXTRA);
+        float saturationBoost = isMef
+                ? SATURATION_BOOST * SATURATION_BOOST_MEF_EXTRA
+                : SATURATION_BOOST + DCR_SATURATION_DELTA;
+
+        float[] blackWhite = computeLevels(pixels, width, height);
         float low = blackWhite[0];
         float high = blackWhite[1];
         float scale = 255f / Math.max(1f, high - low);
         scale = Math.min(scale, MAX_LEVELS_SCALE);
+        scale *= brightnessBoost;
         float offset = -low * scale;
 
-        ColorMatrix levels = new ColorMatrix(new float[]{
-                scale, 0, 0, 0, offset,
-                0, scale, 0, 0, offset,
-                0, 0, scale, 0, offset,
-                0, 0, 0, 1, 0,
-        });
-        ColorMatrix saturation = new ColorMatrix();
-        saturation.setSaturation(SATURATION_BOOST);
+        float invSat = 1f - saturationBoost;
+        float cr = 0.213f * invSat;
+        float cg = 0.715f * invSat;
+        float cb = 0.072f * invSat;
 
-        ColorMatrix combined = new ColorMatrix();
-        combined.postConcat(levels);
-        combined.postConcat(saturation);
+        float redGain = isMef ? 1f : 1f + DCR_RED_SHIFT;
+        float greenGain = isMef ? 1f : 1f - DCR_RED_SHIFT;
+        float blueGain = isMef ? 1f : 1f - DCR_YELLOW_SHIFT;
 
-        Bitmap output = Bitmap.createBitmap(source.getWidth(), source.getHeight(), Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(output);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColorFilter(new ColorMatrixColorFilter(combined));
-        canvas.drawBitmap(source, 0, 0, paint);
-        return output;
+        int[] out = new int[pixels.length];
+        for (int i = 0; i < pixels.length; i++) {
+            int p = pixels[i];
+            float r = ((p >> 16) & 0xFF) * redGain;
+            float g = ((p >> 8) & 0xFF) * greenGain;
+            float b = (p & 0xFF) * blueGain;
+
+            float outR = (cr + saturationBoost) * r + cg * g + cb * b;
+            float outG = cr * r + (cg + saturationBoost) * g + cb * b;
+            float outB = cr * r + cg * g + (cb + saturationBoost) * b;
+
+            outR = outR * scale + offset;
+            outG = outG * scale + offset;
+            outB = outB * scale + offset;
+
+            float contrastFactor = isMef ? MEF_CONTRAST_FACTOR : DCR_CONTRAST_FACTOR;
+            outR = applyContrast(outR, contrastFactor);
+            outG = applyContrast(outG, contrastFactor);
+            outB = applyContrast(outB, contrastFactor);
+
+            out[i] = (0xFF << 24) | (clamp255(outR) << 16) | (clamp255(outG) << 8) | clamp255(outB);
+        }
+        return out;
     }
 
     /**
@@ -77,19 +120,16 @@ final class AutoEnhance {
      * percentile) so the levels stretch is driven by this image's actual tonal range
      * instead of a fixed brightness multiplier.
      */
-    private static float[] computeLevels(Bitmap source) {
-        int width = source.getWidth();
-        int height = source.getHeight();
+    static float[] computeLevels(int[] pixels, int width, int height) {
         int[] histogram = new int[256];
 
         int stepX = Math.max(1, width / 400);
         int stepY = Math.max(1, height / 400);
         int sampleCount = 0;
-        int[] row = new int[width];
         for (int y = 0; y < height; y += stepY) {
-            source.getPixels(row, 0, width, 0, y, width, 1);
+            int rowStart = y * width;
             for (int x = 0; x < width; x += stepX) {
-                int p = row[x];
+                int p = pixels[rowStart + x];
                 int r = (p >> 16) & 0xFF;
                 int g = (p >> 8) & 0xFF;
                 int b = p & 0xFF;
@@ -131,11 +171,7 @@ final class AutoEnhance {
     }
 
     /** Simple 3x3 unsharp-mask-style convolution: center pixel boosted, neighbors subtracted. */
-    private static Bitmap sharpen(Bitmap source, float amount) {
-        int width = source.getWidth();
-        int height = source.getHeight();
-        int[] pixels = new int[width * height];
-        source.getPixels(pixels, 0, width, 0, 0, width, height);
+    static int[] sharpen(int[] pixels, int width, int height, float amount) {
         int[] out = new int[pixels.length];
 
         float center = 1 + 4 * amount;
@@ -162,7 +198,7 @@ final class AutoEnhance {
                 out[idx] = (0xFF << 24) | (r << 16) | (g << 8) | b;
             }
         }
-        return Bitmap.createBitmap(out, width, height, Bitmap.Config.ARGB_8888);
+        return out;
     }
 
     private static int sharpenChannel(int c, int up, int down, int left, int right, int shift,
@@ -172,10 +208,19 @@ final class AutoEnhance {
         int dv = (down >> shift) & 0xFF;
         int lv = (left >> shift) & 0xFF;
         int rv = (right >> shift) & 0xFF;
-        int value = Math.round(center * cv + side * (uv + dv + lv + rv));
-        if (value < 0) return 0;
-        if (value > 255) return 255;
-        return value;
+        return clamp255(center * cv + side * (uv + dv + lv + rv));
+    }
+
+    /** Linear contrast scale pivoted around mid-gray: factor &lt; 1 reduces contrast. */
+    static float applyContrast(float value, float factor) {
+        return (value - 128f) * factor + 128f;
+    }
+
+    private static int clamp255(float value) {
+        int rounded = Math.round(value);
+        if (rounded < 0) return 0;
+        if (rounded > 255) return 255;
+        return rounded;
     }
 
     private AutoEnhance() {

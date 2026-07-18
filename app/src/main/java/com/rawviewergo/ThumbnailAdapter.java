@@ -83,7 +83,7 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
 
         CachedThumb cached = memoryCache.get(uriString);
         if (cached != null) {
-            displayCached(holder, uriString, cached);
+            displayCached(holder, uriString, cached, RawFileUtils.isMef(document.getName()));
             holder.itemView.setOnClickListener(v -> listener.onItemClick(document));
             return;
         }
@@ -95,7 +95,7 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
             if (entry != null) {
                 memoryCache.put(uriString, entry);
                 if (enhanceEnabled) {
-                    entry.enhanced = AutoEnhance.apply(entry.base);
+                    entry.enhanced = AutoEnhance.apply(entry.base, RawFileUtils.isMef(document.getName()));
                 }
             }
             mainHandler.post(() -> {
@@ -112,7 +112,7 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
         holder.itemView.setOnClickListener(v -> listener.onItemClick(document));
     }
 
-    private void displayCached(ViewHolder holder, String uriString, CachedThumb cached) {
+    private void displayCached(ViewHolder holder, String uriString, CachedThumb cached, boolean isMef) {
         holder.progress.setVisibility(View.GONE);
         if (!enhanceEnabled) {
             holder.image.setImageBitmap(cached.base);
@@ -124,7 +124,7 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
         }
         holder.image.setImageBitmap(cached.base);
         executor.execute(() -> {
-            Bitmap enhanced = AutoEnhance.apply(cached.base);
+            Bitmap enhanced = AutoEnhance.apply(cached.base, isMef);
             cached.enhanced = enhanced;
             mainHandler.post(() -> {
                 if (uriString.equals(holder.itemView.getTag())) {

@@ -44,6 +44,8 @@ dependencies {
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
     implementation 'androidx.documentfile:documentfile:1.0.1'
     implementation 'androidx.activity:activity:1.9.3'
+
+    testImplementation 'junit:junit:4.13.2'
 }
 
 // Copies the debug APK out to <repo root>/Build/RawViewerGo.apk after every debug build,
