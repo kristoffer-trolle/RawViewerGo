@@ -26,6 +26,8 @@ import java.util.concurrent.Executors;
 
 class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder> {
 
+    private static final String TAG = "ThumbnailAdapter";
+
     interface OnItemClickListener {
         void onItemClick(DocumentFile document);
     }
@@ -35,20 +37,31 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
     private final OnItemClickListener listener;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final LruCache<String, Bitmap> memoryCache;
+    private final LruCache<String, CachedThumb> memoryCache;
+    private boolean enhanceEnabled;
 
     ThumbnailAdapter(Context context, List<DocumentFile> items, OnItemClickListener listener) {
         this.context = context;
         this.items = items;
         this.listener = listener;
+        this.enhanceEnabled = AutoEnhance.isEnabled(context);
 
         int maxMemoryKb = (int) (Runtime.getRuntime().maxMemory() / 1024);
-        this.memoryCache = new LruCache<String, Bitmap>(maxMemoryKb / 8) {
+        this.memoryCache = new LruCache<String, CachedThumb>(maxMemoryKb / 8) {
             @Override
-            protected int sizeOf(String key, Bitmap bitmap) {
-                return bitmap.getByteCount() / 1024;
+            protected int sizeOf(String key, CachedThumb value) {
+                int bytes = value.base.getByteCount();
+                if (value.enhanced != null) {
+                    bytes += value.enhanced.getByteCount();
+                }
+                return bytes / 1024;
             }
         };
+    }
+
+    void setEnhanceEnabled(boolean enabled) {
+        this.enhanceEnabled = enabled;
+        notifyDataSetChanged();
     }
 
     @NonNull
@@ -68,24 +81,29 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
         holder.name.setText(document.getName());
         holder.image.setImageBitmap(null);
 
-        Bitmap cached = memoryCache.get(uriString);
+        CachedThumb cached = memoryCache.get(uriString);
         if (cached != null) {
-            holder.image.setImageBitmap(cached);
-            holder.progress.setVisibility(View.GONE);
+            displayCached(holder, uriString, cached);
+            holder.itemView.setOnClickListener(v -> listener.onItemClick(document));
             return;
         }
 
         holder.progress.setVisibility(View.VISIBLE);
         executor.execute(() -> {
             Bitmap bitmap = decode(document);
-            if (bitmap != null) {
-                memoryCache.put(uriString, bitmap);
+            CachedThumb entry = bitmap != null ? new CachedThumb(bitmap) : null;
+            if (entry != null) {
+                memoryCache.put(uriString, entry);
+                if (enhanceEnabled) {
+                    entry.enhanced = AutoEnhance.apply(entry.base);
+                }
             }
             mainHandler.post(() -> {
                 if (uriString.equals(holder.itemView.getTag())) {
                     holder.progress.setVisibility(View.GONE);
-                    if (bitmap != null) {
-                        holder.image.setImageBitmap(bitmap);
+                    if (entry != null) {
+                        holder.image.setImageBitmap(
+                                enhanceEnabled && entry.enhanced != null ? entry.enhanced : entry.base);
                     }
                 }
             });
@@ -94,7 +112,27 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
         holder.itemView.setOnClickListener(v -> listener.onItemClick(document));
     }
 
-    private static final String TAG = "ThumbnailAdapter";
+    private void displayCached(ViewHolder holder, String uriString, CachedThumb cached) {
+        holder.progress.setVisibility(View.GONE);
+        if (!enhanceEnabled) {
+            holder.image.setImageBitmap(cached.base);
+            return;
+        }
+        if (cached.enhanced != null) {
+            holder.image.setImageBitmap(cached.enhanced);
+            return;
+        }
+        holder.image.setImageBitmap(cached.base);
+        executor.execute(() -> {
+            Bitmap enhanced = AutoEnhance.apply(cached.base);
+            cached.enhanced = enhanced;
+            mainHandler.post(() -> {
+                if (uriString.equals(holder.itemView.getTag())) {
+                    holder.image.setImageBitmap(enhanced);
+                }
+            });
+        });
+    }
 
     private Bitmap decode(DocumentFile document) {
         // Reads directly off the SAF Uri via a seekable file descriptor - no local copy of
@@ -128,6 +166,15 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
 
     void shutdown() {
         executor.shutdownNow();
+    }
+
+    private static class CachedThumb {
+        final Bitmap base;
+        volatile Bitmap enhanced;
+
+        CachedThumb(Bitmap base) {
+            this.base = base;
+        }
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {

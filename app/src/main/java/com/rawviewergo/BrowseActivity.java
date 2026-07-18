@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -25,6 +26,7 @@ public class BrowseActivity extends AppCompatActivity {
 
     private RecyclerView recyclerView;
     private TextView emptyState;
+    private Button buttonAutoEnhance;
     private ThumbnailAdapter adapter;
     private Uri currentTreeUri;
 
@@ -51,11 +53,39 @@ public class BrowseActivity extends AppCompatActivity {
 
         recyclerView = findViewById(R.id.recyclerThumbnails);
         emptyState = findViewById(R.id.textEmptyState);
+        buttonAutoEnhance = findViewById(R.id.buttonAutoEnhance);
         recyclerView.setLayoutManager(new GridLayoutManager(this, GRID_SPAN_COUNT));
 
         findViewById(R.id.buttonSelectFolder).setOnClickListener(v -> launchFolderPicker());
+        buttonAutoEnhance.setOnClickListener(v -> toggleAutoEnhance());
+        updateAutoEnhanceButtonText();
 
         restorePersistedFolderOrShowEmptyState();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        boolean enabled = AutoEnhance.isEnabled(this);
+        updateAutoEnhanceButtonText();
+        if (adapter != null) {
+            adapter.setEnhanceEnabled(enabled);
+        }
+    }
+
+    private void toggleAutoEnhance() {
+        boolean enabled = !AutoEnhance.isEnabled(this);
+        AutoEnhance.setEnabled(this, enabled);
+        updateAutoEnhanceButtonText();
+        if (adapter != null) {
+            adapter.setEnhanceEnabled(enabled);
+        }
+    }
+
+    private void updateAutoEnhanceButtonText() {
+        buttonAutoEnhance.setText(AutoEnhance.isEnabled(this)
+                ? R.string.disable_auto_enhance
+                : R.string.auto_enhance);
     }
 
     private void launchFolderPicker() {

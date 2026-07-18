@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -30,6 +31,10 @@ public class ViewerActivity extends AppCompatActivity {
     private ImageView imageView;
     private ProgressBar progressBar;
     private TextView errorText;
+    private Button buttonAutoEnhance;
+
+    private Bitmap baseBitmap;
+    private Bitmap enhancedBitmap;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,8 +44,11 @@ public class ViewerActivity extends AppCompatActivity {
         imageView = findViewById(R.id.imageViewer);
         progressBar = findViewById(R.id.progressViewer);
         errorText = findViewById(R.id.textViewerError);
+        buttonAutoEnhance = findViewById(R.id.buttonAutoEnhance);
 
         findViewById(R.id.buttonBack).setOnClickListener(v -> finish());
+        buttonAutoEnhance.setOnClickListener(v -> toggleAutoEnhance());
+        updateAutoEnhanceButtonText();
 
         Uri uri = getIntent().getParcelableExtra(EXTRA_URI);
         if (uri == null) {
@@ -71,9 +79,50 @@ public class ViewerActivity extends AppCompatActivity {
             mainHandler.post(() -> {
                 progressBar.setVisibility(View.GONE);
                 if (finalBitmap != null) {
-                    imageView.setImageBitmap(finalBitmap);
+                    baseBitmap = finalBitmap;
+                    applyCurrentEnhanceState();
                 } else {
                     errorText.setVisibility(View.VISIBLE);
+                }
+            });
+        });
+    }
+
+    private void toggleAutoEnhance() {
+        boolean enabled = !AutoEnhance.isEnabled(this);
+        AutoEnhance.setEnabled(this, enabled);
+        updateAutoEnhanceButtonText();
+        applyCurrentEnhanceState();
+    }
+
+    private void updateAutoEnhanceButtonText() {
+        buttonAutoEnhance.setText(AutoEnhance.isEnabled(this)
+                ? R.string.disable_auto_enhance
+                : R.string.auto_enhance);
+    }
+
+    private void applyCurrentEnhanceState() {
+        if (baseBitmap == null) {
+            return;
+        }
+        if (!AutoEnhance.isEnabled(this)) {
+            imageView.setImageBitmap(baseBitmap);
+            return;
+        }
+        if (enhancedBitmap != null) {
+            imageView.setImageBitmap(enhancedBitmap);
+            return;
+        }
+
+        progressBar.setVisibility(View.VISIBLE);
+        Bitmap sourceForThisRequest = baseBitmap;
+        executor.execute(() -> {
+            Bitmap result = AutoEnhance.apply(sourceForThisRequest);
+            enhancedBitmap = result;
+            mainHandler.post(() -> {
+                progressBar.setVisibility(View.GONE);
+                if (AutoEnhance.isEnabled(this) && sourceForThisRequest == baseBitmap) {
+                    imageView.setImageBitmap(result);
                 }
             });
         });
