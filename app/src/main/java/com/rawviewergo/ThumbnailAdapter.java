@@ -99,6 +99,9 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
             Bitmap bmp = LibRaw.decodePreview(staged);
             if (bmp == null) {
                 android.util.Log.w("ThumbnailAdapter", "decodePreview returned null for " + document.getName());
+            } else {
+                android.util.Log.i("ThumbnailAdapter", "decodePreview " + document.getName()
+                        + " -> " + bmp.getWidth() + "x" + bmp.getHeight());
             }
             return bmp;
         } catch (Exception e) {

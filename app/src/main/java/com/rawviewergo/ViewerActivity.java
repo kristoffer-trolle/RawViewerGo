@@ -60,7 +60,10 @@ public class ViewerActivity extends AppCompatActivity {
             try {
                 DocumentFile document = DocumentFile.fromSingleUri(this, uri);
                 File staged = RawFileUtils.stageForDecode(this, document);
-                bitmap = LibRaw.decodePreview(staged);
+                bitmap = NativeRaw.decode(staged);
+                if (bitmap == null) {
+                    bitmap = LibRaw.decodePreview(staged);
+                }
             } catch (Exception ignored) {
                 // handled below via null bitmap
             }
