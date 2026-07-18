@@ -35,7 +35,7 @@ public class ViewerActivity extends AppCompatActivity {
 
     private Bitmap baseBitmap;
     private Bitmap enhancedBitmap;
-    private boolean isMef;
+    private RawFileUtils.RawFormat rawFormat;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,7 +60,7 @@ public class ViewerActivity extends AppCompatActivity {
         }
         String name = getIntent().getStringExtra(EXTRA_NAME);
         setTitle(name);
-        isMef = RawFileUtils.isMef(name);
+        rawFormat = RawFileUtils.classify(name);
         loadImage(uri);
     }
 
@@ -122,7 +122,7 @@ public class ViewerActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
         Bitmap sourceForThisRequest = baseBitmap;
         executor.execute(() -> {
-            Bitmap result = AutoEnhance.apply(sourceForThisRequest, isMef);
+            Bitmap result = AutoEnhance.apply(sourceForThisRequest, rawFormat);
             enhancedBitmap = result;
             mainHandler.post(() -> {
                 progressBar.setVisibility(View.GONE);

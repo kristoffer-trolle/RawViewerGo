@@ -4,6 +4,8 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import com.rawviewergo.RawFileUtils.RawFormat;
+
 import org.junit.Test;
 
 /**
@@ -81,7 +83,21 @@ public class AutoEnhanceTest {
         int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
         java.util.Arrays.fill(pixels, gray(128));
 
-        int[] result = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, true);
+        int[] result = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.MEF);
+
+        int pixel = result[0];
+        assertEquals(red(pixel), green(pixel));
+        assertEquals(green(pixel), blue(pixel));
+    }
+
+    @Test
+    public void applyToPixels_other_keepsNeutralGrayNeutral() {
+        // Formats with no sample-based tuning yet (e.g. Phase One .iiq) should get only the
+        // general boost - no color balance shift - so a neutral gray input stays neutral.
+        int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
+        java.util.Arrays.fill(pixels, gray(128));
+
+        int[] result = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.OTHER);
 
         int pixel = result[0];
         assertEquals(red(pixel), green(pixel));
@@ -93,7 +109,7 @@ public class AutoEnhanceTest {
         int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
         java.util.Arrays.fill(pixels, gray(128));
 
-        int[] result = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, false);
+        int[] result = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.DCR);
 
         int pixel = result[0];
         assertTrue("expected red > green (shift toward red)", red(pixel) > green(pixel));
@@ -104,17 +120,21 @@ public class AutoEnhanceTest {
     }
 
     @Test
-    public void applyToPixels_dcrVsMef_onlyDcrShiftsColorBalance() {
-        // Same input, only isMef differs - the two outputs should disagree on color balance.
+    public void applyToPixels_dcrVsMefVsOther_onlyDcrShiftsColorBalance() {
+        // Same input, only the format differs - only DCR's output should disagree on
+        // color balance; MEF and OTHER both leave a neutral input neutral.
         int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
         java.util.Arrays.fill(pixels, gray(100));
 
-        int[] mefResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, true);
-        int[] dcrResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, false);
+        int[] mefResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.MEF);
+        int[] otherResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.OTHER);
+        int[] dcrResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.DCR);
 
         int mefPixel = mefResult[0];
+        int otherPixel = otherResult[0];
         int dcrPixel = dcrResult[0];
         assertEquals(red(mefPixel), green(mefPixel)); // MEF stays neutral
+        assertEquals(red(otherPixel), green(otherPixel)); // OTHER stays neutral
         assertTrue(red(dcrPixel) != green(dcrPixel)); // DCR does not
     }
 

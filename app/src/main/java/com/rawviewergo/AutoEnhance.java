@@ -3,6 +3,8 @@ package com.rawviewergo;
 import android.content.Context;
 import android.graphics.Bitmap;
 
+import com.rawviewergo.RawFileUtils.RawFormat;
+
 /**
  * Post-processes an already-decoded raw preview/image: these medium-format backs' raw
  * previews tend to come out dark and flat with no in-camera tone curve applied, so this
@@ -16,7 +18,8 @@ import android.graphics.Bitmap;
  * noticeably darker otherwise) plus a bigger contrast pull-back (they tend to look too
  * contrasty). Kodak Pro Back (.dcr) files get their own, smaller brightness boost and
  * contrast pull-back, an extra color balance shift toward red/yellow (they render slightly
- * cool/green otherwise), and slightly less saturation than the general amount.
+ * cool/green otherwise), and slightly less saturation than the general amount. Everything
+ * else (e.g. Phase One .iiq) gets only the general boost - no sample-based tuning yet.
  *
  * The core math (computeLevels/applyToPixels/sharpen) works on plain int[] ARGB pixel
  * arrays with no android.graphics dependency, so it's directly unit-testable on the JVM
@@ -29,18 +32,19 @@ final class AutoEnhance {
 
     static final float BRIGHTNESS_BOOST = 1.2f; // +20% general
     static final float BRIGHTNESS_BOOST_MEF_EXTRA = 1.2f; // additional +20% for MEF, stacked
+    static final float BRIGHTNESS_BOOST_DCR_EXTRA = 1.05f * 1.05f; // additional +5% for DCR, stacked twice
     static final float SATURATION_BOOST = 1.35f; // +35% general
     static final float SATURATION_BOOST_MEF_EXTRA = 1.2f; // additional +20% for MEF, stacked
+    static final float DCR_SATURATION_DELTA = -0.05f; // -5 points off the general saturation boost, DCR only
     static final float SHARPEN_AMOUNT = 0.9f * 1.1f * 1.1f; // +10% general, twice now
     static final float LEVELS_LOW_PERCENTILE = 0.01f;
     static final float LEVELS_HIGH_PERCENTILE = 0.99f;
     static final float MAX_LEVELS_SCALE = 3.0f;
     static final float DCR_RED_SHIFT = 0.20f; // toward red on the green<->red axis
     static final float DCR_YELLOW_SHIFT = 0.25f; // toward yellow on the blue<->yellow axis
-    static final float DCR_SATURATION_DELTA = -0.05f; // -5 points off the general saturation boost
-    static final float DCR_BRIGHTNESS_EXTRA = 1.05f * 1.05f; // additional +5% for DCR, stacked twice
     static final float DCR_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
     static final float MEF_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
+    static final float NEUTRAL_CONTRAST_FACTOR = 1f; // no change, for formats with no specific tuning
 
     static boolean isEnabled(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -52,26 +56,49 @@ final class AutoEnhance {
                 .edit().putBoolean(KEY_ENABLED, enabled).apply();
     }
 
-    static Bitmap apply(Bitmap source, boolean isMef) {
+    static Bitmap apply(Bitmap source, RawFormat format) {
         int width = source.getWidth();
         int height = source.getHeight();
         int[] pixels = new int[width * height];
         source.getPixels(pixels, 0, width, 0, 0, width, height);
-        int[] result = applyToPixels(pixels, width, height, isMef);
+        int[] result = applyToPixels(pixels, width, height, format);
         return Bitmap.createBitmap(result, width, height, Bitmap.Config.ARGB_8888);
     }
 
     /** Pure pixel-array pipeline: color balance -> levels/saturation -> contrast -> sharpen. */
-    static int[] applyToPixels(int[] pixels, int width, int height, boolean isMef) {
-        int[] toned = applyLevelsSaturationAndColorBalance(pixels, width, height, isMef);
+    static int[] applyToPixels(int[] pixels, int width, int height, RawFormat format) {
+        int[] toned = applyLevelsSaturationAndColorBalance(pixels, width, height, format);
         return sharpen(toned, width, height, SHARPEN_AMOUNT);
     }
 
-    private static int[] applyLevelsSaturationAndColorBalance(int[] pixels, int width, int height, boolean isMef) {
-        float brightnessBoost = BRIGHTNESS_BOOST * (isMef ? BRIGHTNESS_BOOST_MEF_EXTRA : DCR_BRIGHTNESS_EXTRA);
-        float saturationBoost = isMef
-                ? SATURATION_BOOST * SATURATION_BOOST_MEF_EXTRA
-                : SATURATION_BOOST + DCR_SATURATION_DELTA;
+    private static int[] applyLevelsSaturationAndColorBalance(int[] pixels, int width, int height, RawFormat format) {
+        float brightnessBoost;
+        float saturationBoost;
+        float contrastFactor;
+        float redGain = 1f;
+        float greenGain = 1f;
+        float blueGain = 1f;
+
+        switch (format) {
+            case MEF:
+                brightnessBoost = BRIGHTNESS_BOOST * BRIGHTNESS_BOOST_MEF_EXTRA;
+                saturationBoost = SATURATION_BOOST * SATURATION_BOOST_MEF_EXTRA;
+                contrastFactor = MEF_CONTRAST_FACTOR;
+                break;
+            case DCR:
+                brightnessBoost = BRIGHTNESS_BOOST * BRIGHTNESS_BOOST_DCR_EXTRA;
+                saturationBoost = SATURATION_BOOST + DCR_SATURATION_DELTA;
+                contrastFactor = DCR_CONTRAST_FACTOR;
+                redGain = 1f + DCR_RED_SHIFT;
+                greenGain = 1f - DCR_RED_SHIFT;
+                blueGain = 1f - DCR_YELLOW_SHIFT;
+                break;
+            default:
+                brightnessBoost = BRIGHTNESS_BOOST;
+                saturationBoost = SATURATION_BOOST;
+                contrastFactor = NEUTRAL_CONTRAST_FACTOR;
+                break;
+        }
 
         float[] blackWhite = computeLevels(pixels, width, height);
         float low = blackWhite[0];
@@ -85,10 +112,6 @@ final class AutoEnhance {
         float cr = 0.213f * invSat;
         float cg = 0.715f * invSat;
         float cb = 0.072f * invSat;
-
-        float redGain = isMef ? 1f : 1f + DCR_RED_SHIFT;
-        float greenGain = isMef ? 1f : 1f - DCR_RED_SHIFT;
-        float blueGain = isMef ? 1f : 1f - DCR_YELLOW_SHIFT;
 
         int[] out = new int[pixels.length];
         for (int i = 0; i < pixels.length; i++) {
@@ -105,7 +128,6 @@ final class AutoEnhance {
             outG = outG * scale + offset;
             outB = outB * scale + offset;
 
-            float contrastFactor = isMef ? MEF_CONTRAST_FACTOR : DCR_CONTRAST_FACTOR;
             outR = applyContrast(outR, contrastFactor);
             outG = applyContrast(outG, contrastFactor);
             outB = applyContrast(outB, contrastFactor);

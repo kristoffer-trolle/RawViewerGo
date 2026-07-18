@@ -29,7 +29,16 @@ import java.util.Locale;
 final class RawFileUtils {
 
     private static final String TAG = "RawFileUtils";
-    private static final String[] RAW_EXTENSIONS = {".dcr", ".mef"};
+    private static final String[] RAW_EXTENSIONS = {".dcr", ".mef", ".iiq"};
+
+    /**
+     * Which camera back a raw file came from - drives AutoEnhance's per-format tuning.
+     * OTHER (e.g. Phase One .iiq) gets only the general boost, no format-specific extras,
+     * since we don't have sample-based tuning for it yet.
+     */
+    enum RawFormat {
+        DCR, MEF, OTHER
+    }
 
     private RawFileUtils() {
     }
@@ -47,8 +56,18 @@ final class RawFileUtils {
         return false;
     }
 
-    static boolean isMef(String name) {
-        return name != null && name.toLowerCase(Locale.ROOT).endsWith(".mef");
+    static RawFormat classify(String name) {
+        if (name == null) {
+            return RawFormat.OTHER;
+        }
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".dcr")) {
+            return RawFormat.DCR;
+        }
+        if (lower.endsWith(".mef")) {
+            return RawFormat.MEF;
+        }
+        return RawFormat.OTHER;
     }
 
     static List<DocumentFile> listRawFiles(DocumentFile folder) {
