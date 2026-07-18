@@ -24,7 +24,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat assembleDebug
 ```
 
-Output APK: `app\build\outputs\apk\debug\app-debug.apk`
+This also copies the APK to `Build\RawViewerGo.apk` (a stable path for sideloading onto a phone, not tracked in git).
 
 ## Running in the emulator
 
@@ -38,6 +38,6 @@ Once booted, install and launch the app:
 
 ```powershell
 $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-& $adb install -r "app\build\outputs\apk\debug\app-debug.apk"
+& $adb install -r "Build\RawViewerGo.apk"
 & $adb shell am start -n com.rawviewergo/.BrowseActivity
 ```
