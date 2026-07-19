@@ -92,8 +92,8 @@ public class AutoEnhanceTest {
 
     @Test
     public void applyToPixels_other_keepsNeutralGrayNeutral() {
-        // Formats with no sample-based tuning yet (e.g. Phase One .iiq) should get only the
-        // general boost - no color balance shift - so a neutral gray input stays neutral.
+        // Any unrecognized format should get only the general boost - no color balance shift -
+        // so a neutral gray input stays neutral.
         int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
         java.util.Arrays.fill(pixels, gray(128));
 
@@ -120,22 +120,28 @@ public class AutoEnhanceTest {
     }
 
     @Test
-    public void applyToPixels_iiq_shiftsNeutralGrayAwayFromRed() {
-        // IIQ_RED_SHIFT is negative - away from red (toward green) - the opposite direction
-        // from DCR's shift.
+    public void applyToPixels_iiq_appliesFlatBrightnessAndRedGreenShiftAsideFromSharpening() {
+        // IIQ skips levels/saturation/contrast entirely, but does get a flat, direct brightness
+        // multiplier plus a small red/green shift - a uniform image is a fixed point of the
+        // sharpen kernel too, so the full pipeline should be exactly these per-channel gains.
         int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
-        java.util.Arrays.fill(pixels, gray(128));
+        java.util.Arrays.fill(pixels, rgb(100, 150, 200));
 
         int[] result = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.IIQ);
 
-        int pixel = result[0];
-        assertTrue("expected green > red (shift away from red)", green(pixel) > red(pixel));
+        float redGain = AutoEnhance.IIQ_BRIGHTNESS_MULTIPLIER * (1f + AutoEnhance.IIQ_RED_SHIFT);
+        float greenGain = AutoEnhance.IIQ_BRIGHTNESS_MULTIPLIER * (1f - AutoEnhance.IIQ_RED_SHIFT);
+        float blueGain = AutoEnhance.IIQ_BRIGHTNESS_MULTIPLIER;
+        int[] expected = new int[pixels.length];
+        int expectedPixel = rgb(Math.round(100 * redGain), Math.round(150 * greenGain), Math.round(200 * blueGain));
+        java.util.Arrays.fill(expected, expectedPixel);
+        assertArrayEquals(expected, result);
     }
 
     @Test
-    public void applyToPixels_dcrVsMefVsIiqVsOther_onlyNeutralFormatsStayNeutral() {
-        // Same input, only the format differs - DCR and IIQ should disagree on color balance
-        // (in opposite directions), while MEF and OTHER both leave a neutral input neutral.
+    public void applyToPixels_dcrVsMefVsIiqVsOther_dcrAndIiqShiftInOppositeDirections() {
+        // Same input, only the format differs - DCR and IIQ shift color balance in opposite
+        // directions, while MEF and OTHER both leave a neutral input neutral.
         int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
         java.util.Arrays.fill(pixels, gray(100));
 
@@ -175,16 +181,16 @@ public class AutoEnhanceTest {
     }
 
     @Test
-    public void iiqContrast_isReducedMoreThanMefAndDcr() {
-        // "-20% contrast for IIQ" should end up a bigger pull-back than MEF's/DCR's -10%.
-        assertTrue("IIQ contrast factor should be below MEF's",
-                AutoEnhance.IIQ_CONTRAST_FACTOR < AutoEnhance.MEF_CONTRAST_FACTOR);
-        assertTrue("IIQ contrast factor should be below DCR's",
-                AutoEnhance.IIQ_CONTRAST_FACTOR < AutoEnhance.DCR_CONTRAST_FACTOR);
+    public void iiqContrast_hasNoAdjustment() {
+        // Every brightness/contrast/color-balance combination tried for IIQ still looked
+        // overcontrasty, so IIQ skips the whole color/tone step (including contrast) entirely -
+        // same as OTHER - rather than using any factor.
+        assertTrue("IIQ should have no contrast adjustment", !AutoEnhance.hasContrastAdjustment(RawFormat.IIQ));
+        assertEquals(200f, AutoEnhance.applyContrastIfEnabled(200f, RawFormat.IIQ), 0.001f);
     }
 
     @Test
-    public void sharpenAmountFor_mefAndIiqExceedGeneral_iiqExceedsMef() {
+    public void sharpenAmountFor_mefExceedsGeneral_iiqIsReducedToAvoidAmplifyingNoise() {
         float general = AutoEnhance.sharpenAmountFor(RawFormat.OTHER);
         float dcr = AutoEnhance.sharpenAmountFor(RawFormat.DCR);
         float mef = AutoEnhance.sharpenAmountFor(RawFormat.MEF);
@@ -192,8 +198,10 @@ public class AutoEnhanceTest {
 
         assertEquals("DCR has no sharpen-specific tuning yet", general, dcr, 0.0001f);
         assertTrue("MEF should sharpen more than general", mef > general);
-        assertTrue("IIQ should sharpen more than general", iiq > general);
-        assertTrue("IIQ's +20% should exceed MEF's +10%", iiq > mef);
+        // IIQ's smooth-sky sample photo showed amplified sensor/demosaic noise as a visible
+        // speckled/grid texture under the general sharpen amount, so IIQ is dialed well below
+        // general rather than above it.
+        assertTrue("IIQ should sharpen less than general to avoid amplifying noise", iiq < general);
     }
 
     @Test

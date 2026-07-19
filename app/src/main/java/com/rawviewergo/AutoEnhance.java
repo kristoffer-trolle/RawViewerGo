@@ -11,17 +11,19 @@ import com.rawviewergo.RawFileUtils.RawFormat;
  * gives an opt-in "make it look nicer" pass rather than changing the base decode itself
  * (which would mean re-running the expensive native demosaic on every toggle).
  *
- * Pipeline: format-specific color balance -> auto-levels brightness/contrast stretch (from the
- * image's own histogram, plus an extra flat brightness boost) -> saturation boost -> contrast
- * reduction (pivoted around mid-gray) -> unsharp-mask-style sharpen. Mamiya ZD (.mef) files
- * get a bigger brightness/saturation boost than Kodak files (they come out noticeably darker
- * otherwise) plus a contrast pull-back and extra sharpening. Kodak Pro Back (.dcr) files get
- * their own, smaller brightness boost and contrast pull-back, a color balance shift toward
- * red/yellow (they render slightly cool/green otherwise), and slightly less saturation than
- * the general amount. Phase One (.iiq) files get a bigger contrast pull-back than either, a
- * small brightness boost, extra sharpening, and a color balance shift away from red/yellow
- * (opposite direction from DCR's shift). Any other/unknown format gets only the general
- * boost, no extras.
+ * Pipeline: format-specific color balance -> auto-levels brightness stretch (from the image's
+ * own histogram, plus an extra flat brightness boost) -> saturation boost -> contrast
+ * reduction (pivoted around mid-gray, DCR/MEF only - see hasContrastAdjustment) ->
+ * unsharp-mask-style sharpen. Mamiya ZD (.mef) files get a bigger brightness/saturation boost
+ * than Kodak files (they come out noticeably darker otherwise) plus a contrast pull-back and
+ * extra sharpening. Kodak Pro Back (.dcr) files get their own, smaller brightness boost and
+ * contrast pull-back, a color balance shift toward red/yellow (they render slightly cool/green
+ * otherwise), and slightly less saturation than the general amount. Phase One (.iiq) files skip
+ * the auto-levels/saturation/contrast machinery entirely (every combination we tried there
+ * looked overcontrasty or amplified sensor noise into a visible speckled texture) and instead
+ * get a flat, direct brightness multiplier, a small direct red/green shift, and their own (much
+ * gentler) sharpening amount. Any other/unknown format gets only the general boost, no extras,
+ * and no contrast adjustment.
  *
  * The core math (computeLevels/applyToPixels/sharpen) works on plain int[] ARGB pixel
  * arrays with no android.graphics dependency, so it's directly unit-testable on the JVM
@@ -40,19 +42,24 @@ final class AutoEnhance {
     static final float DCR_SATURATION_DELTA = -0.05f; // -5 points off the general saturation boost, DCR only
     static final float SHARPEN_AMOUNT = 0.9f * 1.1f * 1.1f; // +10% general, twice now
     static final float SHARPEN_AMOUNT_MEF_EXTRA = 1.10f; // additional +10% for MEF, stacked
-    static final float SHARPEN_AMOUNT_IIQ_EXTRA = 1.20f * 1.10f; // additional +20%, then +10% more, for IIQ, stacked
+    // The IIQ sample photo's smooth sky has very little visible sensor/demosaic noise before
+    // sharpening (pixel values fluctuate by ~5 out of 255), but a strong unsharp mask amplifies
+    // exactly that kind of fine per-pixel noise, turning it into a visible speckled/grid
+    // texture. Dialed way down from the general amount to avoid that.
+    static final float SHARPEN_AMOUNT_IIQ_EXTRA = 0.3f;
     static final float LEVELS_LOW_PERCENTILE = 0.01f;
     static final float LEVELS_HIGH_PERCENTILE = 0.99f;
     static final float MAX_LEVELS_SCALE = 3.0f;
     static final float DCR_RED_SHIFT = 0.20f; // toward red on the green<->red axis
     static final float DCR_YELLOW_SHIFT = 0.25f - 0.05f; // toward yellow on the blue<->yellow axis, -5% more
-    static final float IIQ_RED_SHIFT = -0.05f; // away from red (toward green) on the green<->red axis
-    static final float IIQ_YELLOW_SHIFT = -0.10f; // away from yellow (toward blue) on the blue<->yellow axis
-    static final float IIQ_BRIGHTNESS_EXTRA = 1.05f * 1.10f * 1.10f; // +5%, then +10%, then +10% more, IIQ only, stacked
     static final float DCR_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
     static final float MEF_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
-    static final float IIQ_CONTRAST_FACTOR = 1f - 0.40f; // -40% contrast total (was -20%, -10%, -10% more), pivoted around mid-gray
-    static final float NEUTRAL_CONTRAST_FACTOR = 1f; // no change, for formats with no specific tuning
+    // IIQ has no saturation/contrast tuning, and no auto-levels percentile stretch (that
+    // combination is what caused the overshoot/clipping and overcontrasty look before) - just
+    // a flat, direct brightness multiplier, a small direct red/green shift, and its own
+    // sharpening amount. See applyToPixels.
+    static final float IIQ_BRIGHTNESS_MULTIPLIER = 1.20f; // +20% flat brightness
+    static final float IIQ_RED_SHIFT = -0.05f; // away from red (toward green) on the green<->red axis
 
     static boolean isEnabled(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -73,10 +80,31 @@ final class AutoEnhance {
         return Bitmap.createBitmap(result, width, height, Bitmap.Config.ARGB_8888);
     }
 
-    /** Pure pixel-array pipeline: color balance -> levels/saturation -> contrast -> sharpen. */
+    /**
+     * Pure pixel-array pipeline: color balance -> levels/saturation -> contrast -> sharpen.
+     * IIQ skips straight to a flat per-channel gain, then sharpen - see the class doc for why.
+     */
     static int[] applyToPixels(int[] pixels, int width, int height, RawFormat format) {
-        int[] toned = applyLevelsSaturationAndColorBalance(pixels, width, height, format);
+        int[] toned = format == RawFormat.IIQ
+                ? applyChannelGains(pixels,
+                        IIQ_BRIGHTNESS_MULTIPLIER * (1f + IIQ_RED_SHIFT),
+                        IIQ_BRIGHTNESS_MULTIPLIER * (1f - IIQ_RED_SHIFT),
+                        IIQ_BRIGHTNESS_MULTIPLIER)
+                : applyLevelsSaturationAndColorBalance(pixels, width, height, format);
         return sharpen(toned, width, height, sharpenAmountFor(format));
+    }
+
+    /** Flat per-channel gain (brightness and/or color balance), independent of the image's own histogram. */
+    static int[] applyChannelGains(int[] pixels, float redGain, float greenGain, float blueGain) {
+        int[] out = new int[pixels.length];
+        for (int i = 0; i < pixels.length; i++) {
+            int p = pixels[i];
+            int r = clamp255(((p >> 16) & 0xFF) * redGain);
+            int g = clamp255(((p >> 8) & 0xFF) * greenGain);
+            int b = clamp255((p & 0xFF) * blueGain);
+            out[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+        }
+        return out;
     }
 
     static float sharpenAmountFor(RawFormat format) {
@@ -90,40 +118,63 @@ final class AutoEnhance {
         }
     }
 
+    /** Contrast pull-back is opt-in per format - only DCR and MEF use it (IIQ skips this whole step). */
+    static boolean hasContrastAdjustment(RawFormat format) {
+        return format == RawFormat.DCR || format == RawFormat.MEF;
+    }
+
+    static float contrastFactorFor(RawFormat format) {
+        switch (format) {
+            case MEF:
+                return MEF_CONTRAST_FACTOR;
+            case DCR:
+                return DCR_CONTRAST_FACTOR;
+            default:
+                return 1f;
+        }
+    }
+
+    /**
+     * Runs the contrast pull-back for formats that have one (DCR/MEF); every other format
+     * (OTHER, and any future format) skips this step entirely and returns the value
+     * unchanged, rather than running it with a "neutral" factor.
+     */
+    static float applyContrastIfEnabled(float value, RawFormat format) {
+        return hasContrastAdjustment(format) ? applyContrast(value, contrastFactorFor(format)) : value;
+    }
+
+    /** Total brightness multiplier (general boost, stacked with any format-specific extra). */
+    static float brightnessBoostFor(RawFormat format) {
+        switch (format) {
+            case MEF:
+                return BRIGHTNESS_BOOST * BRIGHTNESS_BOOST_MEF_EXTRA;
+            case DCR:
+                return BRIGHTNESS_BOOST * BRIGHTNESS_BOOST_DCR_EXTRA;
+            default:
+                return BRIGHTNESS_BOOST;
+        }
+    }
+
+    /** Not called for IIQ - see applyToPixels. */
     private static int[] applyLevelsSaturationAndColorBalance(int[] pixels, int width, int height, RawFormat format) {
-        float brightnessBoost;
+        float brightnessBoost = brightnessBoostFor(format);
         float saturationBoost;
-        float contrastFactor;
         float redGain = 1f;
         float greenGain = 1f;
         float blueGain = 1f;
 
         switch (format) {
             case MEF:
-                brightnessBoost = BRIGHTNESS_BOOST * BRIGHTNESS_BOOST_MEF_EXTRA;
                 saturationBoost = SATURATION_BOOST * SATURATION_BOOST_MEF_EXTRA;
-                contrastFactor = MEF_CONTRAST_FACTOR;
                 break;
             case DCR:
-                brightnessBoost = BRIGHTNESS_BOOST * BRIGHTNESS_BOOST_DCR_EXTRA;
                 saturationBoost = SATURATION_BOOST + DCR_SATURATION_DELTA;
-                contrastFactor = DCR_CONTRAST_FACTOR;
                 redGain = 1f + DCR_RED_SHIFT;
                 greenGain = 1f - DCR_RED_SHIFT;
                 blueGain = 1f - DCR_YELLOW_SHIFT;
                 break;
-            case IIQ:
-                brightnessBoost = BRIGHTNESS_BOOST * IIQ_BRIGHTNESS_EXTRA;
-                saturationBoost = SATURATION_BOOST;
-                contrastFactor = IIQ_CONTRAST_FACTOR;
-                redGain = 1f + IIQ_RED_SHIFT;
-                greenGain = 1f - IIQ_RED_SHIFT;
-                blueGain = 1f - IIQ_YELLOW_SHIFT;
-                break;
             default:
-                brightnessBoost = BRIGHTNESS_BOOST;
                 saturationBoost = SATURATION_BOOST;
-                contrastFactor = NEUTRAL_CONTRAST_FACTOR;
                 break;
         }
 
@@ -155,9 +206,9 @@ final class AutoEnhance {
             outG = outG * scale + offset;
             outB = outB * scale + offset;
 
-            outR = applyContrast(outR, contrastFactor);
-            outG = applyContrast(outG, contrastFactor);
-            outB = applyContrast(outB, contrastFactor);
+            outR = applyContrastIfEnabled(outR, format);
+            outG = applyContrastIfEnabled(outG, format);
+            outB = applyContrastIfEnabled(outB, format);
 
             out[i] = (0xFF << 24) | (clamp255(outR) << 16) | (clamp255(outG) << 8) | clamp255(outB);
         }

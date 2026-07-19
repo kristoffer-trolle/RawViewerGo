@@ -38,4 +38,8 @@ captures/
 
 # build/RawViewerGo.apk (a convenience copy for sideloading) is also caught by /build/ above.
 
-/enhance_tuning/
+# enhance_tuning/ holds personal sample photos and generated previews (not for git) alongside
+# the actual dev tooling used to generate them (tracked below).
+/enhance_tuning/*
+!/enhance_tuning/EnhanceRunner.java
+!/enhance_tuning/render.sh
