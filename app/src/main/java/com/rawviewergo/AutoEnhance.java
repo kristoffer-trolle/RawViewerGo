@@ -11,15 +11,17 @@ import com.rawviewergo.RawFileUtils.RawFormat;
  * gives an opt-in "make it look nicer" pass rather than changing the base decode itself
  * (which would mean re-running the expensive native demosaic on every toggle).
  *
- * Pipeline: DCR-only color balance (toward red/yellow) -> auto-levels brightness/contrast
- * stretch (from the image's own histogram, plus an extra flat brightness boost) -> saturation
- * boost -> contrast reduction (pivoted around mid-gray) -> unsharp-mask-style sharpen. Mamiya
- * ZD (.mef) files get a bigger brightness/saturation boost than Kodak files (they come out
- * noticeably darker otherwise) plus a bigger contrast pull-back (they tend to look too
- * contrasty). Kodak Pro Back (.dcr) files get their own, smaller brightness boost and
- * contrast pull-back, an extra color balance shift toward red/yellow (they render slightly
- * cool/green otherwise), and slightly less saturation than the general amount. Everything
- * else (e.g. Phase One .iiq) gets only the general boost - no sample-based tuning yet.
+ * Pipeline: format-specific color balance -> auto-levels brightness/contrast stretch (from the
+ * image's own histogram, plus an extra flat brightness boost) -> saturation boost -> contrast
+ * reduction (pivoted around mid-gray) -> unsharp-mask-style sharpen. Mamiya ZD (.mef) files
+ * get a bigger brightness/saturation boost than Kodak files (they come out noticeably darker
+ * otherwise) plus a contrast pull-back and extra sharpening. Kodak Pro Back (.dcr) files get
+ * their own, smaller brightness boost and contrast pull-back, a color balance shift toward
+ * red/yellow (they render slightly cool/green otherwise), and slightly less saturation than
+ * the general amount. Phase One (.iiq) files get a bigger contrast pull-back than either, a
+ * small brightness boost, extra sharpening, and a color balance shift away from red/yellow
+ * (opposite direction from DCR's shift). Any other/unknown format gets only the general
+ * boost, no extras.
  *
  * The core math (computeLevels/applyToPixels/sharpen) works on plain int[] ARGB pixel
  * arrays with no android.graphics dependency, so it's directly unit-testable on the JVM
@@ -37,13 +39,19 @@ final class AutoEnhance {
     static final float SATURATION_BOOST_MEF_EXTRA = 1.2f; // additional +20% for MEF, stacked
     static final float DCR_SATURATION_DELTA = -0.05f; // -5 points off the general saturation boost, DCR only
     static final float SHARPEN_AMOUNT = 0.9f * 1.1f * 1.1f; // +10% general, twice now
+    static final float SHARPEN_AMOUNT_MEF_EXTRA = 1.10f; // additional +10% for MEF, stacked
+    static final float SHARPEN_AMOUNT_IIQ_EXTRA = 1.20f * 1.10f; // additional +20%, then +10% more, for IIQ, stacked
     static final float LEVELS_LOW_PERCENTILE = 0.01f;
     static final float LEVELS_HIGH_PERCENTILE = 0.99f;
     static final float MAX_LEVELS_SCALE = 3.0f;
     static final float DCR_RED_SHIFT = 0.20f; // toward red on the green<->red axis
-    static final float DCR_YELLOW_SHIFT = 0.25f; // toward yellow on the blue<->yellow axis
+    static final float DCR_YELLOW_SHIFT = 0.25f - 0.05f; // toward yellow on the blue<->yellow axis, -5% more
+    static final float IIQ_RED_SHIFT = -0.05f; // away from red (toward green) on the green<->red axis
+    static final float IIQ_YELLOW_SHIFT = -0.10f; // away from yellow (toward blue) on the blue<->yellow axis
+    static final float IIQ_BRIGHTNESS_EXTRA = 1.05f * 1.10f * 1.10f; // +5%, then +10%, then +10% more, IIQ only, stacked
     static final float DCR_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
     static final float MEF_CONTRAST_FACTOR = 1f - 0.10f; // -10% contrast, pivoted around mid-gray
+    static final float IIQ_CONTRAST_FACTOR = 1f - 0.40f; // -40% contrast total (was -20%, -10%, -10% more), pivoted around mid-gray
     static final float NEUTRAL_CONTRAST_FACTOR = 1f; // no change, for formats with no specific tuning
 
     static boolean isEnabled(Context context) {
@@ -68,7 +76,18 @@ final class AutoEnhance {
     /** Pure pixel-array pipeline: color balance -> levels/saturation -> contrast -> sharpen. */
     static int[] applyToPixels(int[] pixels, int width, int height, RawFormat format) {
         int[] toned = applyLevelsSaturationAndColorBalance(pixels, width, height, format);
-        return sharpen(toned, width, height, SHARPEN_AMOUNT);
+        return sharpen(toned, width, height, sharpenAmountFor(format));
+    }
+
+    static float sharpenAmountFor(RawFormat format) {
+        switch (format) {
+            case MEF:
+                return SHARPEN_AMOUNT * SHARPEN_AMOUNT_MEF_EXTRA;
+            case IIQ:
+                return SHARPEN_AMOUNT * SHARPEN_AMOUNT_IIQ_EXTRA;
+            default:
+                return SHARPEN_AMOUNT;
+        }
     }
 
     private static int[] applyLevelsSaturationAndColorBalance(int[] pixels, int width, int height, RawFormat format) {
@@ -92,6 +111,14 @@ final class AutoEnhance {
                 redGain = 1f + DCR_RED_SHIFT;
                 greenGain = 1f - DCR_RED_SHIFT;
                 blueGain = 1f - DCR_YELLOW_SHIFT;
+                break;
+            case IIQ:
+                brightnessBoost = BRIGHTNESS_BOOST * IIQ_BRIGHTNESS_EXTRA;
+                saturationBoost = SATURATION_BOOST;
+                contrastFactor = IIQ_CONTRAST_FACTOR;
+                redGain = 1f + IIQ_RED_SHIFT;
+                greenGain = 1f - IIQ_RED_SHIFT;
+                blueGain = 1f - IIQ_YELLOW_SHIFT;
                 break;
             default:
                 brightnessBoost = BRIGHTNESS_BOOST;

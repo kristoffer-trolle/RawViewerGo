@@ -31,7 +31,8 @@ public class RawFileUtilsTest {
     public void classify_matchesEachFormat() {
         assertEquals(RawFormat.DCR, RawFileUtils.classify("4H6B9130.DCR"));
         assertEquals(RawFormat.MEF, RawFileUtils.classify("MMFC0399.mef"));
-        assertEquals(RawFormat.OTHER, RawFileUtils.classify("CF123558.IIQ"));
+        assertEquals(RawFormat.IIQ, RawFileUtils.classify("CF123558.IIQ"));
+        assertEquals(RawFormat.OTHER, RawFileUtils.classify("photo.jpg"));
         assertEquals(RawFormat.OTHER, RawFileUtils.classify(null));
     }
 }

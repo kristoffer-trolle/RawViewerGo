@@ -120,22 +120,38 @@ public class AutoEnhanceTest {
     }
 
     @Test
-    public void applyToPixels_dcrVsMefVsOther_onlyDcrShiftsColorBalance() {
-        // Same input, only the format differs - only DCR's output should disagree on
-        // color balance; MEF and OTHER both leave a neutral input neutral.
+    public void applyToPixels_iiq_shiftsNeutralGrayAwayFromRed() {
+        // IIQ_RED_SHIFT is negative - away from red (toward green) - the opposite direction
+        // from DCR's shift.
+        int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
+        java.util.Arrays.fill(pixels, gray(128));
+
+        int[] result = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.IIQ);
+
+        int pixel = result[0];
+        assertTrue("expected green > red (shift away from red)", green(pixel) > red(pixel));
+    }
+
+    @Test
+    public void applyToPixels_dcrVsMefVsIiqVsOther_onlyNeutralFormatsStayNeutral() {
+        // Same input, only the format differs - DCR and IIQ should disagree on color balance
+        // (in opposite directions), while MEF and OTHER both leave a neutral input neutral.
         int[] pixels = new int[UNIFORM_TEST_SIZE * UNIFORM_TEST_SIZE];
         java.util.Arrays.fill(pixels, gray(100));
 
         int[] mefResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.MEF);
         int[] otherResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.OTHER);
         int[] dcrResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.DCR);
+        int[] iiqResult = AutoEnhance.applyToPixels(pixels, UNIFORM_TEST_SIZE, UNIFORM_TEST_SIZE, RawFormat.IIQ);
 
         int mefPixel = mefResult[0];
         int otherPixel = otherResult[0];
         int dcrPixel = dcrResult[0];
+        int iiqPixel = iiqResult[0];
         assertEquals(red(mefPixel), green(mefPixel)); // MEF stays neutral
         assertEquals(red(otherPixel), green(otherPixel)); // OTHER stays neutral
-        assertTrue(red(dcrPixel) != green(dcrPixel)); // DCR does not
+        assertTrue(red(dcrPixel) > green(dcrPixel)); // DCR shifts toward red
+        assertTrue(green(iiqPixel) > red(iiqPixel)); // IIQ shifts away from red
     }
 
     // --- contrast ---
@@ -156,6 +172,28 @@ public class AutoEnhanceTest {
     @Test
     public void applyContrast_leavesMidGrayUnchanged() {
         assertEquals(128f, AutoEnhance.applyContrast(128f, AutoEnhance.MEF_CONTRAST_FACTOR), 0.001f);
+    }
+
+    @Test
+    public void iiqContrast_isReducedMoreThanMefAndDcr() {
+        // "-20% contrast for IIQ" should end up a bigger pull-back than MEF's/DCR's -10%.
+        assertTrue("IIQ contrast factor should be below MEF's",
+                AutoEnhance.IIQ_CONTRAST_FACTOR < AutoEnhance.MEF_CONTRAST_FACTOR);
+        assertTrue("IIQ contrast factor should be below DCR's",
+                AutoEnhance.IIQ_CONTRAST_FACTOR < AutoEnhance.DCR_CONTRAST_FACTOR);
+    }
+
+    @Test
+    public void sharpenAmountFor_mefAndIiqExceedGeneral_iiqExceedsMef() {
+        float general = AutoEnhance.sharpenAmountFor(RawFormat.OTHER);
+        float dcr = AutoEnhance.sharpenAmountFor(RawFormat.DCR);
+        float mef = AutoEnhance.sharpenAmountFor(RawFormat.MEF);
+        float iiq = AutoEnhance.sharpenAmountFor(RawFormat.IIQ);
+
+        assertEquals("DCR has no sharpen-specific tuning yet", general, dcr, 0.0001f);
+        assertTrue("MEF should sharpen more than general", mef > general);
+        assertTrue("IIQ should sharpen more than general", iiq > general);
+        assertTrue("IIQ's +20% should exceed MEF's +10%", iiq > mef);
     }
 
     @Test

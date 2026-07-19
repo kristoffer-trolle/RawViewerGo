@@ -33,11 +33,11 @@ final class RawFileUtils {
 
     /**
      * Which camera back a raw file came from - drives AutoEnhance's per-format tuning.
-     * OTHER (e.g. Phase One .iiq) gets only the general boost, no format-specific extras,
-     * since we don't have sample-based tuning for it yet.
+     * OTHER gets only the general boost, no format-specific extras, for any format we don't
+     * have sample-based tuning for yet.
      */
     enum RawFormat {
-        DCR, MEF, OTHER
+        DCR, MEF, IIQ, OTHER
     }
 
     private RawFileUtils() {
@@ -66,6 +66,9 @@ final class RawFileUtils {
         }
         if (lower.endsWith(".mef")) {
             return RawFormat.MEF;
+        }
+        if (lower.endsWith(".iiq")) {
+            return RawFormat.IIQ;
         }
         return RawFormat.OTHER;
     }
