@@ -34,11 +34,10 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <ImageView
+        <com.rawviewergo.ZoomableImageView
             android:id="@+id/imageViewer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:scaleType="fitCenter"
             android:contentDescription="@null" />
 
         <ProgressBar
