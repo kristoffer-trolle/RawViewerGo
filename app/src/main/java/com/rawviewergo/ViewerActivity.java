@@ -37,6 +37,13 @@ public class ViewerActivity extends AppCompatActivity {
     private Bitmap enhancedBitmap;
     private boolean enhanceComputing;
     private RawFileUtils.RawFormat rawFormat;
+    // Background decode/enhance work can still be in flight (native JNI calls don't respond to
+    // Thread.interrupt(), so executor.shutdownNow() in onDestroy doesn't stop them) when the
+    // user backs out mid-load. Both background tasks post their result back via mainHandler,
+    // which runs on the main thread alongside onDestroy, so checking this flag first (set
+    // before shutting down the executor) reliably skips touching the executor/UI afterward
+    // instead of crashing with RejectedExecutionException.
+    private boolean destroyed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,6 +90,9 @@ public class ViewerActivity extends AppCompatActivity {
             }
             Bitmap finalBitmap = bitmap;
             mainHandler.post(() -> {
+                if (destroyed) {
+                    return;
+                }
                 if (finalBitmap != null) {
                     baseBitmap = finalBitmap;
                     onBaseImageReady();
@@ -140,8 +150,8 @@ public class ViewerActivity extends AppCompatActivity {
             Bitmap result = AutoEnhance.apply(sourceForThisRequest, rawFormat);
             mainHandler.post(() -> {
                 enhanceComputing = false;
-                if (sourceForThisRequest != baseBitmap) {
-                    return; // a different image loaded while this was computing
+                if (destroyed || sourceForThisRequest != baseBitmap) {
+                    return; // activity gone, or a different image loaded while this was computing
                 }
                 enhancedBitmap = result;
                 if (AutoEnhance.isEnabled(this)) {
@@ -155,6 +165,7 @@ public class ViewerActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        destroyed = true;
         executor.shutdownNow();
     }
 }
