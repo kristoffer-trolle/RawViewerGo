@@ -66,7 +66,7 @@ public class ViewerActivity extends AppCompatActivity {
         findViewById(R.id.buttonBack).setOnClickListener(v -> finish());
         buttonAutoEnhance.setOnClickListener(v -> toggleAutoEnhance());
         findViewById(R.id.buttonShare).setOnClickListener(v -> shareCurrentImage());
-        updateAutoEnhanceButtonText();
+        updateAutoEnhanceButton();
 
         Uri uri = getIntent().getParcelableExtra(EXTRA_URI);
         if (uri == null) {
@@ -127,7 +127,7 @@ public class ViewerActivity extends AppCompatActivity {
     private void toggleAutoEnhance() {
         boolean enabled = !AutoEnhance.isEnabled(this);
         AutoEnhance.setEnabled(this, enabled);
-        updateAutoEnhanceButtonText();
+        updateAutoEnhanceButton();
         if (!enabled) {
             imageView.setImageBitmap(baseBitmap);
             return;
@@ -140,10 +140,8 @@ public class ViewerActivity extends AppCompatActivity {
         startEnhanceComputation();
     }
 
-    private void updateAutoEnhanceButtonText() {
-        buttonAutoEnhance.setText(AutoEnhance.isEnabled(this)
-                ? R.string.disable_auto_enhance
-                : R.string.auto_enhance);
+    private void updateAutoEnhanceButton() {
+        EnhanceButtonUtil.update(buttonAutoEnhance, AutoEnhance.isEnabled(this));
     }
 
     /** No-op if already computed/computing - safe to call any time the base image is ready. */

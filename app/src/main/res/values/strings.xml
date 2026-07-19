@@ -2,8 +2,7 @@
     <string name="app_name">RawViewerGo</string>
     <string name="select_folder">Select folder</string>
     <string name="back">Back</string>
-    <string name="auto_enhance">Auto Enhance</string>
-    <string name="disable_auto_enhance">Disable Auto Enhance</string>
+    <string name="enhance">Enhance</string>
     <string name="share">Share</string>
     <string name="share_chooser_title">Share image</string>
     <string name="share_failed">Could not share this image.</string>

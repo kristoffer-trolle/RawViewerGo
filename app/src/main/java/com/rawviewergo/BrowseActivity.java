@@ -59,7 +59,7 @@ public class BrowseActivity extends AppCompatActivity {
         InsetUtils.applyTopBarInset(findViewById(R.id.topBar));
         findViewById(R.id.buttonSelectFolder).setOnClickListener(v -> launchFolderPicker());
         buttonAutoEnhance.setOnClickListener(v -> toggleAutoEnhance());
-        updateAutoEnhanceButtonText();
+        updateAutoEnhanceButton();
 
         restorePersistedFolderOrShowEmptyState();
     }
@@ -68,7 +68,7 @@ public class BrowseActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         boolean enabled = AutoEnhance.isEnabled(this);
-        updateAutoEnhanceButtonText();
+        updateAutoEnhanceButton();
         if (adapter != null) {
             adapter.setEnhanceEnabled(enabled);
         }
@@ -77,16 +77,14 @@ public class BrowseActivity extends AppCompatActivity {
     private void toggleAutoEnhance() {
         boolean enabled = !AutoEnhance.isEnabled(this);
         AutoEnhance.setEnabled(this, enabled);
-        updateAutoEnhanceButtonText();
+        updateAutoEnhanceButton();
         if (adapter != null) {
             adapter.setEnhanceEnabled(enabled);
         }
     }
 
-    private void updateAutoEnhanceButtonText() {
-        buttonAutoEnhance.setText(AutoEnhance.isEnabled(this)
-                ? R.string.disable_auto_enhance
-                : R.string.auto_enhance);
+    private void updateAutoEnhanceButton() {
+        EnhanceButtonUtil.update(buttonAutoEnhance, AutoEnhance.isEnabled(this));
     }
 
     private void launchFolderPicker() {
