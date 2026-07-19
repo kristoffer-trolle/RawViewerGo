@@ -35,6 +35,7 @@ public class ViewerActivity extends AppCompatActivity {
 
     private Bitmap baseBitmap;
     private Bitmap enhancedBitmap;
+    private boolean enhanceComputing;
     private RawFileUtils.RawFormat rawFormat;
 
     @Override
@@ -82,22 +83,44 @@ public class ViewerActivity extends AppCompatActivity {
             }
             Bitmap finalBitmap = bitmap;
             mainHandler.post(() -> {
-                progressBar.setVisibility(View.GONE);
                 if (finalBitmap != null) {
                     baseBitmap = finalBitmap;
-                    applyCurrentEnhanceState();
+                    onBaseImageReady();
                 } else {
+                    progressBar.setVisibility(View.GONE);
                     errorText.setVisibility(View.VISIBLE);
                 }
             });
         });
     }
 
+    private void onBaseImageReady() {
+        if (!AutoEnhance.isEnabled(this)) {
+            progressBar.setVisibility(View.GONE);
+            imageView.setImageBitmap(baseBitmap);
+        }
+        // else leave the spinner up - startEnhanceComputation's callback shows the result.
+
+        // Precompute the enhanced version in the background regardless of whether Auto Enhance
+        // is on right now, so toggling it on later doesn't need its own multi-second wait on
+        // top of the decode - by the time the button is tapped this is usually already done.
+        startEnhanceComputation();
+    }
+
     private void toggleAutoEnhance() {
         boolean enabled = !AutoEnhance.isEnabled(this);
         AutoEnhance.setEnabled(this, enabled);
         updateAutoEnhanceButtonText();
-        applyCurrentEnhanceState();
+        if (!enabled) {
+            imageView.setImageBitmap(baseBitmap);
+            return;
+        }
+        if (enhancedBitmap != null) {
+            imageView.setImageBitmap(enhancedBitmap);
+            return;
+        }
+        progressBar.setVisibility(View.VISIBLE);
+        startEnhanceComputation();
     }
 
     private void updateAutoEnhanceButtonText() {
@@ -106,27 +129,23 @@ public class ViewerActivity extends AppCompatActivity {
                 : R.string.auto_enhance);
     }
 
-    private void applyCurrentEnhanceState() {
-        if (baseBitmap == null) {
+    /** No-op if already computed/computing - safe to call any time the base image is ready. */
+    private void startEnhanceComputation() {
+        if (baseBitmap == null || enhancedBitmap != null || enhanceComputing) {
             return;
         }
-        if (!AutoEnhance.isEnabled(this)) {
-            imageView.setImageBitmap(baseBitmap);
-            return;
-        }
-        if (enhancedBitmap != null) {
-            imageView.setImageBitmap(enhancedBitmap);
-            return;
-        }
-
-        progressBar.setVisibility(View.VISIBLE);
+        enhanceComputing = true;
         Bitmap sourceForThisRequest = baseBitmap;
         executor.execute(() -> {
             Bitmap result = AutoEnhance.apply(sourceForThisRequest, rawFormat);
-            enhancedBitmap = result;
             mainHandler.post(() -> {
-                progressBar.setVisibility(View.GONE);
-                if (AutoEnhance.isEnabled(this) && sourceForThisRequest == baseBitmap) {
+                enhanceComputing = false;
+                if (sourceForThisRequest != baseBitmap) {
+                    return; // a different image loaded while this was computing
+                }
+                enhancedBitmap = result;
+                if (AutoEnhance.isEnabled(this)) {
+                    progressBar.setVisibility(View.GONE);
                     imageView.setImageBitmap(result);
                 }
             });
