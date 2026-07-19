@@ -4,6 +4,9 @@
     <string name="back">Back</string>
     <string name="auto_enhance">Auto Enhance</string>
     <string name="disable_auto_enhance">Disable Auto Enhance</string>
+    <string name="share">Share</string>
+    <string name="share_chooser_title">Share image</string>
+    <string name="share_failed">Could not share this image.</string>
     <string name="no_folder_selected">No folder selected. Tap \"Select folder\" to browse a card reader or storage folder.</string>
     <string name="no_raw_files">No .dcr or .mef files found in this folder.</string>
     <string name="decode_failed">Could not decode this raw file.</string>

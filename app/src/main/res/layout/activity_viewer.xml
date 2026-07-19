@@ -22,10 +22,19 @@
 
         <Button
             android:id="@+id/buttonAutoEnhance"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:textSize="16sp"
+            android:text="@string/auto_enhance" />
+
+        <Button
+            android:id="@+id/buttonShare"
             android:layout_width="wrap_content"
             android:layout_height="56dp"
             android:textSize="16sp"
-            android:text="@string/auto_enhance" />
+            android:text="@string/share" />
 
     </LinearLayout>
 
