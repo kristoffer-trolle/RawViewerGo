@@ -48,11 +48,11 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
 }
 
-// Copies the debug APK out to <repo root>/Build/RawViewerGo.apk after every debug build,
+// Copies the debug APK out to <repo root>/build/RawViewerGo.apk after every debug build,
 // so there's always a stable, easy-to-find path for sideloading onto a phone.
 tasks.register('copyApkToBuildFolder', Copy) {
     from("$buildDir/outputs/apk/debug/app-debug.apk")
-    into("$rootDir/Build")
+    into("$rootDir/build")
     rename { "RawViewerGo.apk" }
 }
 

@@ -36,7 +36,6 @@ captures/
 # Gradle wrapper jar must be committed for ./gradlew to work
 !gradle/wrapper/gradle-wrapper.jar
 
-# Build/RawViewerGo.apk (a convenience copy for sideloading) is also caught by /build/ above,
-# since Windows git is case-insensitive - kept as a no-op reminder in case that ever changes.
+# build/RawViewerGo.apk (a convenience copy for sideloading) is also caught by /build/ above.
 
 /enhance_tuning/
