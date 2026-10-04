@@ -48,3 +48,7 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 & $adb install -r "build\RawViewerGo.apk"
 & $adb shell am start -n com.rawviewergo/.BrowseActivity
 ```
+
+## License
+
+[MIT](LICENSE). The vendored LibRaw source under `app/src/main/cpp/libraw` keeps its own license (LGPL 2.1 or CDDL 1.0, see the files in that folder).
