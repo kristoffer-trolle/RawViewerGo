@@ -27,7 +27,7 @@ android {
             def keystoreProps = new Properties()
             keystorePropsFile.withInputStream { keystoreProps.load(it) }
             release {
-                storeFile file(keystoreProps['storeFile'])
+                storeFile rootProject.file(keystoreProps['storeFile'])
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']
