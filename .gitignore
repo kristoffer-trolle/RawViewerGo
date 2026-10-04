@@ -25,6 +25,11 @@ replay_pid*
 
 # Android / Gradle
 /local.properties
+
+# Release signing secrets - never commit
+/keystore.properties
+*.jks
+*.keystore
 /build/
 /app/build/
 /.gradle/

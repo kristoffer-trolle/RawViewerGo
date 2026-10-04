@@ -19,9 +19,28 @@ android {
         }
     }
 
+    // Release signing reads from <repo root>/keystore.properties (gitignored, never committed).
+    // Without that file, assembleRelease still works but produces an unsigned APK.
+    def keystorePropsFile = rootProject.file('keystore.properties')
+    signingConfigs {
+        if (keystorePropsFile.exists()) {
+            def keystoreProps = new Properties()
+            keystorePropsFile.withInputStream { keystoreProps.load(it) }
+            release {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
