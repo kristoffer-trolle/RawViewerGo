@@ -17,8 +17,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 import androidx.documentfile.provider.DocumentFile;
 
-import com.anthonymandra.dcraw.LibRaw;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -90,7 +88,8 @@ public class ViewerActivity extends AppCompatActivity {
                 File staged = RawFileUtils.stageForDecode(this, document);
                 bitmap = NativeRaw.decode(staged);
                 if (bitmap == null) {
-                    bitmap = LibRaw.decodePreview(staged);
+                    // Fall back to the embedded preview if the full demosaic fails.
+                    bitmap = NativeRaw.decodeThumbnail(this, uri);
                 }
             } catch (Exception ignored) {
                 // handled below via null bitmap

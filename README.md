@@ -12,7 +12,6 @@ Android app for viewing camera raw files on the go (e.g. from a USB-C SD card re
 
 - Java , traditional Android Views with XML layouts (no Compose)
 - Native raw decoding via [LibRaw](https://github.com/LibRaw/LibRaw) 0.22.2, vendored under `app/src/main/cpp/libraw` and built with our own JNI bridge (`app/src/main/cpp/raw_jni.cpp`) through NDK + CMake
-- A reused prebuilt LibRaw binary (from a decompiled reference app, `com.anthonymandra.dcraw.LibRaw`) is kept as a fallback path for embedded-thumbnail extraction
 - Gradle (Groovy DSL), Android Gradle Plugin, targets `minSdk 26`
 
 ## Building the APK

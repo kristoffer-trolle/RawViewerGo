@@ -10,8 +10,7 @@ import android.util.Log;
 import java.io.IOException;
 
 /**
- * JNI bridge to our own from-source native build (app/src/main/cpp, vendoring LibRaw 0.22.2),
- * distinct from the reused prebuilt com.anthonymandra.dcraw.LibRaw kept as a fallback.
+ * JNI bridge to our own from-source native build (app/src/main/cpp, vendoring LibRaw 0.22.2).
  */
 final class NativeRaw {
 

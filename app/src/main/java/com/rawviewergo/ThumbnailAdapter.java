@@ -17,9 +17,6 @@ import androidx.annotation.NonNull;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.anthonymandra.dcraw.LibRaw;
-
-import java.io.File;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -138,25 +135,10 @@ class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.ViewHolder>
         // Reads directly off the SAF Uri via a seekable file descriptor - no local copy of
         // the raw file needed, since LibRaw only pulls the byte ranges it actually needs.
         Bitmap bitmap = NativeRaw.decodeThumbnail(context, document.getUri());
-        if (bitmap != null) {
-            return bitmap;
+        if (bitmap == null) {
+            Log.w(TAG, "decodeThumbnail returned null for " + document.getName());
         }
-
-        // Fallback: the reused prebuilt binary needs a real file path, so stage a local copy.
-        try {
-            File staged = RawFileUtils.stageForDecode(context, document);
-            bitmap = LibRaw.decodePreview(staged);
-            if (bitmap == null) {
-                Log.w(TAG, "decodePreview returned null for " + document.getName());
-            } else {
-                Log.i(TAG, "decodePreview " + document.getName()
-                        + " -> " + bitmap.getWidth() + "x" + bitmap.getHeight());
-            }
-            return bitmap;
-        } catch (Exception e) {
-            Log.e(TAG, "decode failed for " + document.getName(), e);
-            return null;
-        }
+        return bitmap;
     }
 
     @Override
